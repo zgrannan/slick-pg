@@ -72,6 +72,7 @@ class PgPlayJsonSupportSuite extends FunSuite {
   val testRec3 = JsonBean(37L, Json.parse(""" { "field": "PF/00.0.0 (abc.xyz abc os x.x.x)" } """), List(Json.parse(""" { "field": "PF/00.0.0 (abc.xyz abc os x.x.x)" } """)), JBean("tx", 7), Nil)
 
 
+
   test("Play json Lifted support") {
     val json1 = Json.parse(""" {"b":2,"title":"hello\nworld"} """)
     val json2 = Json.parse(""" {"a":"v5","b":3} """)
@@ -84,13 +85,20 @@ class PgPlayJsonSupportSuite extends FunSuite {
     val unicodelessJson = Json.parse(""" { "d":"123456" } """)
     val testRec4 = JsonBean(39L, unicodedJson, Nil, JBean("t2", 9), Nil)
 
+    val withEscapeChar = Json.parse(""" "hello \\n world" """)
+
+    val testRec5 = JsonBean(41L, Json.parse(""" {} """), List(withEscapeChar), JBean("", 0), Nil)
+
     Await.result(db.run(
       DBIO.seq(
         JsonTests.schema create,
         ///
-        JsonTests forceInsertAll List(testRec1, testRec2, testRec3, testRec4)
+        JsonTests forceInsertAll List(testRec1, testRec2, testRec3, testRec4, testRec5)
       ).andThen(
         DBIO.seq(
+          JsonTests.filter(_.id === testRec5.id.bind).map(_.jsons).result.head.map(
+            r => assert(r.head === withEscapeChar)
+          ),
           JsonTests.filter(_.id === testRec2.id.bind).map(_.json).result.head.map(
             r => assert(JsArray(List(json1,json2)) === r)
           ),
@@ -99,7 +107,7 @@ class PgPlayJsonSupportSuite extends FunSuite {
           ),
           JsonTests.to[List].result.map(
             // testRec4 has its \u0000 character stripped
-            r => assert(List(testRec1, testRec2, testRec3, testRec4.copy(json = unicodelessJson)) === r)
+            r => assert(List(testRec1, testRec2, testRec3, testRec4.copy(json = unicodelessJson), testRec5) === r)
           ),
           // ->>/->
           JsonTests.filter(_.json.+>>("a") === "101").map(_.json.+>>("c")).result.head.map(
